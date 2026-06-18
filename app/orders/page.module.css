@@ -1,0 +1,246 @@
+.page {
+  padding: 48px 0;
+}
+
+.pageTitle {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: 15px;
+  color: var(--text-tertiary);
+  margin-top: 8px;
+  margin-bottom: 40px;
+}
+
+/* Empty State */
+.emptyState {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.emptyIcon {
+  font-size: 64px;
+  display: block;
+  margin-bottom: 24px;
+}
+
+.emptyState h1 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.emptyState p {
+  color: var(--text-tertiary);
+  margin-bottom: 32px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Order List */
+.orderList {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.orderCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: all var(--transition-fast);
+  animation: fadeIn 0.4s ease-out;
+}
+
+.orderCard:hover {
+  border-color: var(--border-color-hover);
+}
+
+/* Order Header */
+.orderHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.orderMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderId {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.orderIdLabel {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.orderIdValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.orderDate {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* Order Items */
+.orderItems {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderItem {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.orderItemImage {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+.orderItemImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.orderItemInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderItemName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.orderItemMeta {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.orderItemPrice {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Order Footer */
+.orderFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.orderShipping {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shippingLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.shippingValue {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.orderDetails {
+  display: flex;
+  gap: 32px;
+}
+
+.orderDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: right;
+}
+
+.orderDetail span:first-child {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.orderDetail span:last-child {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.orderTotal span:last-child {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .orderHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .orderFooter {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .orderDetails {
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .orderDetail {
+    text-align: left;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
