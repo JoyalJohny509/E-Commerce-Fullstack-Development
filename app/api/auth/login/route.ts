@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 import { setAuthCookie } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
 
@@ -15,7 +15,9 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email) as {
+    await initializeDatabase();
+    const result = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+    const user = result.rows[0] as {
       id: string;
       name: string;
       email: string;

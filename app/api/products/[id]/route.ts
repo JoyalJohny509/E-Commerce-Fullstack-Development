@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
@@ -8,16 +8,17 @@ export async function GET(
   try {
     const { id } = await params;
     const db = getDb();
+    await initializeDatabase();
 
     // Query product by id
-    const row = db
-      .prepare(
-        `SELECT id, name, description, price, original_price, image,
-                category, rating, review_count, in_stock, badge, features
-         FROM products
-         WHERE id = ?`
-      )
-      .get(id) as any;
+    const result = await db.query(
+      `SELECT id, name, description, price, original_price, image,
+              category, rating, review_count, in_stock, badge, features
+       FROM products
+       WHERE id = $1`,
+      [id]
+    );
+    const row = result.rows[0] as any;
 
     if (!row) {
       return NextResponse.json(
@@ -42,15 +43,15 @@ export async function GET(
     };
 
     // Query related products (same category, different id, limit 4)
-    const relatedRows = db
-      .prepare(
-        `SELECT id, name, description, price, original_price, image,
-                category, rating, review_count, in_stock, badge, features
-         FROM products
-         WHERE category = ? AND id != ?
-         LIMIT 4`
-      )
-      .all(row.category, id) as any[];
+    const relatedResult = await db.query(
+      `SELECT id, name, description, price, original_price, image,
+              category, rating, review_count, in_stock, badge, features
+       FROM products
+       WHERE category = $1 AND id != $2
+       LIMIT 4`,
+      [row.category, id]
+    );
+    const relatedRows = relatedResult.rows as any[];
 
     const relatedProducts = relatedRows.map((r) => ({
       id: r.id,

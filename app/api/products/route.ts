@@ -1,27 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
+    await initializeDatabase();
+    
     const { searchParams } = new URL(request.url);
 
     const category = searchParams.get('category');
     const search = searchParams.get('search');
     const sort = searchParams.get('sort') || 'featured';
 
-    // Build product query dynamically
+    // Build product query dynamically using PostgreSQL $1, $2 parameter binding
     const conditions: string[] = [];
-    const queryParams: string[] = [];
+    const queryParams: any[] = [];
 
     if (category) {
-      conditions.push('p.category = ?');
+      conditions.push(`p.category = $${queryParams.length + 1}`);
       queryParams.push(category);
     }
 
     if (search) {
+      const idx = queryParams.length;
       conditions.push(
-        '(p.name LIKE ? OR p.description LIKE ? OR p.category LIKE ?)'
+        `(p.name ILIKE $${idx + 1} OR p.description ILIKE $${idx + 2} OR p.category ILIKE $${idx + 3})`
       );
       const searchTerm = `%${search}%`;
       queryParams.push(searchTerm, searchTerm, searchTerm);
@@ -60,7 +63,8 @@ export async function GET(request: NextRequest) {
       ${orderByClause}
     `;
 
-    const rows = db.prepare(productsQuery).all(...queryParams) as any[];
+    const productsResult = await db.query(productsQuery, queryParams);
+    const rows = productsResult.rows;
 
     const products = rows.map((row) => ({
       id: row.id,
@@ -86,7 +90,8 @@ export async function GET(request: NextRequest) {
       ORDER BY c.name ASC
     `;
 
-    const categories = db.prepare(categoriesQuery).all().map((row: any) => ({
+    const categoriesResult = await db.query(categoriesQuery);
+    const categories = categoriesResult.rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       slug: row.slug,

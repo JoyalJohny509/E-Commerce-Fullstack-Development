@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 import { setAuthCookie } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
 
@@ -22,7 +22,9 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
-    const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email);
+    await initializeDatabase();
+    const existingResult = await db.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+    const existing = existingResult.rows[0];
 
     if (existing) {
       return NextResponse.json(
@@ -35,9 +37,10 @@ export async function POST(request: NextRequest) {
     const id = `user-${Date.now()}`;
     const createdAt = new Date().toISOString();
 
-    db.prepare(
-      'INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).run(id, name, email, passwordHash, createdAt);
+    await db.query(
+      'INSERT INTO users (id, name, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)',
+      [id, name, email, passwordHash, createdAt]
+    );
 
     setAuthCookie({ userId: id, email });
 

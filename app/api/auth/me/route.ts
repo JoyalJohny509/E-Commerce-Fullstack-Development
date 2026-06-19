@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
 export async function GET() {
@@ -11,7 +11,9 @@ export async function GET() {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id, name, email, created_at FROM users WHERE id = ?').get(session.userId) as {
+    await initializeDatabase();
+    const result = await db.query('SELECT id, name, email, created_at FROM users WHERE id = $1', [session.userId]);
+    const user = result.rows[0] as {
       id: string;
       name: string;
       email: string;

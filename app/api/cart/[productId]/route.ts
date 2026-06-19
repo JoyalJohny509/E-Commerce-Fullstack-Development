@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { getUserCart } from '../route';
 
@@ -29,20 +29,23 @@ export async function PATCH(
     }
 
     const db = getDb();
+    await initializeDatabase();
 
     if (quantity <= 0) {
       // Delete the item if quantity is zero or negative
-      db.prepare(
-        'DELETE FROM cart_items WHERE user_id = ? AND product_id = ?'
-      ).run(user.userId, productId);
+      await db.query(
+        'DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2',
+        [user.userId, productId]
+      );
     } else {
       // Update the quantity
-      db.prepare(
-        'UPDATE cart_items SET quantity = ? WHERE user_id = ? AND product_id = ?'
-      ).run(quantity, user.userId, productId);
+      await db.query(
+        'UPDATE cart_items SET quantity = $1 WHERE user_id = $2 AND product_id = $3',
+        [quantity, user.userId, productId]
+      );
     }
 
-    const items = getUserCart(db, user.userId);
+    const items = await getUserCart(db, user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {
@@ -70,12 +73,14 @@ export async function DELETE(
 
     const { productId } = await params;
     const db = getDb();
+    await initializeDatabase();
 
-    db.prepare(
-      'DELETE FROM cart_items WHERE user_id = ? AND product_id = ?'
-    ).run(user.userId, productId);
+    await db.query(
+      'DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2',
+      [user.userId, productId]
+    );
 
-    const items = getUserCart(db, user.userId);
+    const items = await getUserCart(db, user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {

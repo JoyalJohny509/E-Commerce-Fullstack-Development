@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, initializeDatabase } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
-function getUserCart(db: any, userId: string) {
-  const rows = db
-    .prepare(
-      `SELECT ci.quantity, p.id, p.name, p.description, p.price, p.original_price,
-              p.image, p.category, p.rating, p.review_count, p.in_stock, p.badge, p.features
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p.id
-       WHERE ci.user_id = ?`
-    )
-    .all(userId);
+async function getUserCart(db: any, userId: string) {
+  const result = await db.query(
+    `SELECT ci.quantity, p.id, p.name, p.description, p.price, p.original_price,
+            p.image, p.category, p.rating, p.review_count, p.in_stock, p.badge, p.features
+     FROM cart_items ci
+     JOIN products p ON ci.product_id = p.id
+     WHERE ci.user_id = $1`,
+    [userId]
+  );
+  
+  const rows = result.rows;
 
   return rows.map((row: any) => ({
     quantity: row.quantity,
@@ -46,7 +47,8 @@ export async function GET() {
     }
 
     const db = getDb();
-    const items = getUserCart(db, user.userId);
+    await initializeDatabase();
+    const items = await getUserCart(db, user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {
@@ -80,11 +82,11 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
+    await initializeDatabase();
 
     // Verify the product exists
-    const product = db
-      .prepare('SELECT id FROM products WHERE id = ?')
-      .get(productId);
+    const productResult = await db.query('SELECT id FROM products WHERE id = $1', [productId]);
+    const product = productResult.rows[0];
     if (!product) {
       return NextResponse.json(
         { success: false, error: 'Product not found' },
@@ -93,25 +95,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if item already exists in cart
-    const existingItem = db
-      .prepare(
-        'SELECT quantity FROM cart_items WHERE user_id = ? AND product_id = ?'
-      )
-      .get(user.userId, productId) as any;
+    const existingItemResult = await db.query(
+      'SELECT quantity FROM cart_items WHERE user_id = $1 AND product_id = $2',
+      [user.userId, productId]
+    );
+    const existingItem = existingItemResult.rows[0] as any;
 
     if (existingItem) {
       // Increment quantity
-      db.prepare(
-        'UPDATE cart_items SET quantity = quantity + ? WHERE user_id = ? AND product_id = ?'
-      ).run(quantity, user.userId, productId);
+      await db.query(
+        'UPDATE cart_items SET quantity = quantity + $1 WHERE user_id = $2 AND product_id = $3',
+        [quantity, user.userId, productId]
+      );
     } else {
       // Insert new row
-      db.prepare(
-        'INSERT INTO cart_items (user_id, product_id, quantity) VALUES (?, ?, ?)'
-      ).run(user.userId, productId, quantity);
+      await db.query(
+        'INSERT INTO cart_items (user_id, product_id, quantity) VALUES ($1, $2, $3)',
+        [user.userId, productId, quantity]
+      );
     }
 
-    const items = getUserCart(db, user.userId);
+    const items = await getUserCart(db, user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {
@@ -135,7 +139,8 @@ export async function DELETE() {
     }
 
     const db = getDb();
-    db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(user.userId);
+    await initializeDatabase();
+    await db.query('DELETE FROM cart_items WHERE user_id = $1', [user.userId]);
 
     return NextResponse.json({ success: true });
   } catch (error) {
