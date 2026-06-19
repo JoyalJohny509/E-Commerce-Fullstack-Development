@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { users } from '@/lib/db/schema';
 import { getCurrentUser } from '@/lib/auth';
+import { eq } from 'drizzle-orm';
 
 export async function GET() {
   try {
@@ -10,15 +13,18 @@ export async function GET() {
       return NextResponse.json({ success: false, user: null });
     }
 
-    const db = getDb();
     await initializeDatabase();
-    const result = await db.query('SELECT id, name, email, created_at FROM users WHERE id = $1', [session.userId]);
-    const user = result.rows[0] as {
-      id: string;
-      name: string;
-      email: string;
-      created_at: string;
-    } | undefined;
+
+    const [user] = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, session.userId))
+      .limit(1);
 
     if (!user) {
       return NextResponse.json({ success: false, user: null });
@@ -30,7 +36,7 @@ export async function GET() {
         id: user.id,
         name: user.name,
         email: user.email,
-        createdAt: user.created_at,
+        createdAt: user.createdAt?.toISOString(),
       },
     });
   } catch {

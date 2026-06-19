@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { CartItem, Product, User, Order, ShippingAddress, PaymentDetails } from './types';
+import { CartItem, Product, User, Order, ShippingAddress } from './types';
 
 // ============ Auth Store ============
 interface AuthStore {
@@ -254,7 +254,6 @@ export const useCartStore = create<CartStore>()(
 interface CheckoutState {
   step: number;
   shippingAddress: ShippingAddress | null;
-  paymentDetails: PaymentDetails | null;
 }
 
 interface OrderStore {
@@ -263,66 +262,23 @@ interface OrderStore {
   isLoading: boolean;
   setCheckoutStep: (step: number) => void;
   setShippingAddress: (address: ShippingAddress) => void;
-  setPaymentDetails: (details: PaymentDetails) => void;
-  placeOrder: () => Promise<Order | null>;
   fetchOrders: () => Promise<void>;
   resetCheckout: () => void;
 }
 
 export const useOrderStore = create<OrderStore>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       orders: [],
       isLoading: false,
       checkout: {
         step: 1,
         shippingAddress: null,
-        paymentDetails: null,
       },
       setCheckoutStep: (step: number) =>
         set((state) => ({ checkout: { ...state.checkout, step } })),
       setShippingAddress: (address: ShippingAddress) =>
         set((state) => ({ checkout: { ...state.checkout, shippingAddress: address } })),
-      setPaymentDetails: (details: PaymentDetails) =>
-        set((state) => ({ checkout: { ...state.checkout, paymentDetails: details } })),
-
-      placeOrder: async () => {
-        const state = get();
-        const { shippingAddress, paymentDetails } = state.checkout;
-
-        if (!shippingAddress || !paymentDetails) return null;
-
-        set({ isLoading: true });
-
-        try {
-          const paymentMethod = `**** ${paymentDetails.cardNumber.replace(/\s/g, '').slice(-4) || '0000'}`;
-
-          const res = await fetch('/api/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              shippingAddress,
-              paymentMethod,
-            }),
-          });
-          const data = await res.json();
-
-          if (data.success) {
-            set((s) => ({
-              orders: [data.order, ...s.orders],
-              isLoading: false,
-            }));
-            // Clear local cart
-            useCartStore.getState().clearCartLocal();
-            return data.order;
-          }
-          set({ isLoading: false });
-          return null;
-        } catch {
-          set({ isLoading: false });
-          return null;
-        }
-      },
 
       fetchOrders: async () => {
         set({ isLoading: true });
@@ -341,7 +297,7 @@ export const useOrderStore = create<OrderStore>()(
 
       resetCheckout: () =>
         set({
-          checkout: { step: 1, shippingAddress: null, paymentDetails: null },
+          checkout: { step: 1, shippingAddress: null },
         }),
     }),
     { name: 'luxe-order-storage' }

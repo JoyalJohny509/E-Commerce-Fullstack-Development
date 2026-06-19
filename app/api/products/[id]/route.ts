@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { products } from '@/lib/db/schema';
+import { toClientProduct } from '@/lib/types';
+import { eq, and, ne } from 'drizzle-orm';
 
 export async function GET(
   request: NextRequest,
@@ -7,18 +11,14 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const db = getDb();
     await initializeDatabase();
 
     // Query product by id
-    const result = await db.query(
-      `SELECT id, name, description, price, original_price, image,
-              category, rating, review_count, in_stock, badge, features
-       FROM products
-       WHERE id = $1`,
-      [id]
-    );
-    const row = result.rows[0] as any;
+    const [row] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1);
 
     if (!row) {
       return NextResponse.json(
@@ -27,46 +27,16 @@ export async function GET(
       );
     }
 
-    const product = {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      price: row.price,
-      originalPrice: row.original_price,
-      image: row.image,
-      category: row.category,
-      rating: row.rating,
-      reviewCount: row.review_count,
-      inStock: Boolean(row.in_stock),
-      badge: row.badge,
-      features: row.features ? JSON.parse(row.features) : [],
-    };
+    const product = toClientProduct(row);
 
     // Query related products (same category, different id, limit 4)
-    const relatedResult = await db.query(
-      `SELECT id, name, description, price, original_price, image,
-              category, rating, review_count, in_stock, badge, features
-       FROM products
-       WHERE category = $1 AND id != $2
-       LIMIT 4`,
-      [row.category, id]
-    );
-    const relatedRows = relatedResult.rows as any[];
+    const relatedRows = await db
+      .select()
+      .from(products)
+      .where(and(eq(products.category, row.category), ne(products.id, id)))
+      .limit(4);
 
-    const relatedProducts = relatedRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      price: r.price,
-      originalPrice: r.original_price,
-      image: r.image,
-      category: r.category,
-      rating: r.rating,
-      reviewCount: r.review_count,
-      inStock: Boolean(r.in_stock),
-      badge: r.badge,
-      features: r.features ? JSON.parse(r.features) : [],
-    }));
+    const relatedProducts = relatedRows.map(toClientProduct);
 
     return NextResponse.json({
       success: true,

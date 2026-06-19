@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { users } from '@/lib/db/schema';
 import { setAuthCookie } from '@/lib/auth';
+import { ilike, eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
 export async function POST(request: NextRequest) {
@@ -14,16 +17,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
-    const result = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
-    const user = result.rows[0] as {
-      id: string;
-      name: string;
-      email: string;
-      password_hash: string;
-      created_at: string;
-    } | undefined;
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(ilike(users.email, email))
+      .limit(1);
 
     if (!user) {
       return NextResponse.json(
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const valid = bcrypt.compareSync(password, user.password_hash);
+    const valid = bcrypt.compareSync(password, user.passwordHash);
     if (!valid) {
       return NextResponse.json(
         { success: false, error: 'Invalid email or password' },
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         id: user.id,
         name: user.name,
         email: user.email,
-        createdAt: user.created_at,
+        createdAt: user.createdAt?.toISOString(),
       },
     });
   } catch {

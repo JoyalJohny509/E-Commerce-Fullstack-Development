@@ -1,4 +1,21 @@
-// ============ Product Types ============
+import type { InferSelectModel } from 'drizzle-orm';
+import type {
+  users as usersTable,
+  products as productsTable,
+  categories as categoriesTable,
+  orders as ordersTable,
+  orderItems as orderItemsTable,
+} from './db/schema';
+
+// ============ Database Row Types (derived from Drizzle schema) ============
+export type UserRow = InferSelectModel<typeof usersTable>;
+export type ProductRow = InferSelectModel<typeof productsTable>;
+export type CategoryRow = InferSelectModel<typeof categoriesTable>;
+export type OrderRow = InferSelectModel<typeof ordersTable>;
+export type OrderItemRow = InferSelectModel<typeof orderItemsTable>;
+
+// ============ Client-Facing Product Type ============
+// Transforms DB snake_case → camelCase and parses JSON fields
 export interface Product {
   id: string;
   name: string;
@@ -75,21 +92,39 @@ export interface Order {
   total: number;
   status: OrderStatus;
   paymentMethod: string;
+  stripeSessionId?: string;
+  stripePaymentIntentId?: string;
   createdAt: string;
   estimatedDelivery: string;
 }
 
 // ============ Payment Types ============
-export interface PaymentDetails {
-  cardNumber: string;
-  cardHolder: string;
-  expiryDate: string;
-  cvv: string;
-}
+// PaymentDetails removed — card data is now handled entirely by Stripe's
+// PCI-compliant hosted checkout page. No raw card data touches this server.
 
 // ============ API Response Types ============
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+// ============ Row → Client Transformers ============
+
+/** Transform a product DB row into the client-facing Product shape */
+export function toClientProduct(row: ProductRow): Product {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    price: row.price,
+    originalPrice: row.originalPrice ?? undefined,
+    image: row.image,
+    category: row.category,
+    rating: row.rating,
+    reviewCount: row.reviewCount,
+    inStock: Boolean(row.inStock),
+    badge: row.badge ?? undefined,
+    features: row.features ? JSON.parse(row.features) : [],
+  };
 }

@@ -1,42 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { pool } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { orders, orderItems, cartItems, products } from '@/lib/db/schema';
 import { getCurrentUser } from '@/lib/auth';
+import { eq, desc } from 'drizzle-orm';
 
-interface OrderRow {
-  id: string;
-  user_id: string;
-  subtotal: number;
-  shipping: number;
-  tax: number;
-  total: number;
-  status: string;
-  payment_method: string;
-  shipping_address: string | object;
-  created_at: string | Date;
-  estimated_delivery: string | Date;
-}
+function formatOrder(
+  order: typeof orders.$inferSelect,
+  items: (typeof orderItems.$inferSelect)[]
+) {
+  const createdAt = order.createdAt instanceof Date
+    ? order.createdAt.toISOString()
+    : order.createdAt;
+  const estimatedDelivery = order.estimatedDelivery instanceof Date
+    ? order.estimatedDelivery.toISOString()
+    : order.estimatedDelivery;
 
-interface OrderItemRow {
-  product_id: string;
-  product_name: string;
-  product_image: string;
-  price: number;
-  quantity: number;
-}
-
-interface CartItemRow {
-  product_id: string;
-  quantity: number;
-  name: string;
-  price: number;
-  image: string;
-}
-
-function formatOrder(order: OrderRow, items: OrderItemRow[]) {
-  const createdAt = order.created_at instanceof Date ? order.created_at.toISOString() : order.created_at;
-  const estimatedDelivery = order.estimated_delivery instanceof Date ? order.estimated_delivery.toISOString() : order.estimated_delivery;
-
-  let parsedAddress = order.shipping_address;
+  let parsedAddress: string | object = order.shippingAddress;
   if (typeof parsedAddress === 'string') {
     try {
       parsedAddress = JSON.parse(parsedAddress);
@@ -47,23 +28,23 @@ function formatOrder(order: OrderRow, items: OrderItemRow[]) {
 
   return {
     id: order.id,
-    userId: order.user_id,
+    userId: order.userId,
     subtotal: Number(order.subtotal),
     shipping: Number(order.shipping),
     tax: Number(order.tax),
     total: Number(order.total),
     status: order.status,
-    paymentMethod: order.payment_method,
+    paymentMethod: order.paymentMethod,
     shippingAddress: parsedAddress,
     items: items.map((item) => ({
-      productId: item.product_id,
-      productName: item.product_name,
-      productImage: item.product_image,
+      productId: item.productId,
+      productName: item.productName,
+      productImage: item.productImage,
       price: Number(item.price),
       quantity: Number(item.quantity),
     })),
-    createdAt: createdAt,
-    estimatedDelivery: estimatedDelivery,
+    createdAt,
+    estimatedDelivery,
   };
 }
 
@@ -77,19 +58,21 @@ export async function GET() {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
-    
-    const ordersResult = await db.query(
-      'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC',
-      [session.userId]
-    );
-    const orders = ordersResult.rows as OrderRow[];
+
+    const userOrders = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.userId, session.userId))
+      .orderBy(desc(orders.createdAt));
 
     const result = await Promise.all(
-      orders.map(async (order) => {
-        const itemsResult = await db.query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
-        return formatOrder(order, itemsResult.rows as OrderItemRow[]);
+      userOrders.map(async (order) => {
+        const items = await db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, order.id));
+        return formatOrder(order, items);
       })
     );
 
@@ -122,67 +105,73 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
 
-    const cartItemsResult = await db.query(
-      `SELECT ci.product_id, ci.quantity, p.name, p.price, p.image
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p.id
-       WHERE ci.user_id = $1`,
-      [session.userId]
-    );
-    const cartItems = cartItemsResult.rows as CartItemRow[];
+    // Fetch cart items with product details using Drizzle join
+    const cartRows = await db
+      .select({
+        productId: cartItems.productId,
+        quantity: cartItems.quantity,
+        name: products.name,
+        price: products.price,
+        image: products.image,
+      })
+      .from(cartItems)
+      .innerJoin(products, eq(cartItems.productId, products.id))
+      .where(eq(cartItems.userId, session.userId));
 
-    if (cartItems.length === 0) {
+    if (cartRows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Cart is empty' },
         { status: 400 }
       );
     }
 
-    const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const subtotal = cartRows.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const shipping = subtotal > 100 ? 0 : 9.99;
     const tax = Math.round(subtotal * 0.08 * 100) / 100;
     const total = Math.round((subtotal + shipping + tax) * 100) / 100;
 
     const orderId = `ORD-${Date.now()}`;
-    const createdAt = new Date().toISOString();
-    const estimatedDelivery = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const createdAt = new Date();
+    const estimatedDelivery = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const client = await db.connect();
-    
+    // Use a raw transaction for atomicity (insert order + items + clear cart)
+    const client = await pool.connect();
+
     try {
       await client.query('BEGIN');
-      
-      await client.query(
-        `INSERT INTO orders (id, user_id, subtotal, shipping, tax, total, status, payment_method, shipping_address, created_at, estimated_delivery)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
+
+      // Insert order
+      await db.insert(orders).values({
+        id: orderId,
+        userId: session.userId,
+        subtotal,
+        shipping,
+        tax,
+        total,
+        status: 'confirmed',
+        paymentMethod,
+        shippingAddress: JSON.stringify(shippingAddress),
+        createdAt,
+        estimatedDelivery,
+      });
+
+      // Insert order items
+      await db.insert(orderItems).values(
+        cartRows.map((item) => ({
           orderId,
-          session.userId,
-          subtotal,
-          shipping,
-          tax,
-          total,
-          'confirmed',
-          paymentMethod,
-          JSON.stringify(shippingAddress),
-          createdAt,
-          estimatedDelivery
-        ]
+          productId: item.productId,
+          productName: item.name,
+          productImage: item.image,
+          price: item.price,
+          quantity: item.quantity,
+        }))
       );
 
-      for (const item of cartItems) {
-        await client.query(
-          `INSERT INTO order_items (order_id, product_id, product_name, product_image, price, quantity)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [orderId, item.product_id, item.name, item.image, item.price, item.quantity]
-        );
-      }
+      // Clear user's cart
+      await db.delete(cartItems).where(eq(cartItems.userId, session.userId));
 
-      await client.query('DELETE FROM cart_items WHERE user_id = $1', [session.userId]);
-      
       await client.query('COMMIT');
     } catch (txError) {
       await client.query('ROLLBACK');
@@ -191,8 +180,8 @@ export async function POST(request: NextRequest) {
       client.release();
     }
 
-    const orderItems = cartItems.map((item) => ({
-      productId: item.product_id,
+    const responseItems = cartRows.map((item) => ({
+      productId: item.productId,
       productName: item.name,
       productImage: item.image,
       price: item.price,
@@ -211,9 +200,9 @@ export async function POST(request: NextRequest) {
         status: 'confirmed',
         paymentMethod,
         shippingAddress,
-        items: orderItems,
-        createdAt,
-        estimatedDelivery,
+        items: responseItems,
+        createdAt: createdAt.toISOString(),
+        estimatedDelivery: estimatedDelivery.toISOString(),
       },
     });
   } catch (error) {

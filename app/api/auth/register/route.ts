@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { users } from '@/lib/db/schema';
 import { setAuthCookie } from '@/lib/auth';
+import { ilike } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
 export async function POST(request: NextRequest) {
@@ -21,10 +24,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
-    const existingResult = await db.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [email]);
-    const existing = existingResult.rows[0];
+
+    // Check if user already exists
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(ilike(users.email, email))
+      .limit(1);
 
     if (existing) {
       return NextResponse.json(
@@ -35,12 +42,15 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = bcrypt.hashSync(password, 10);
     const id = `user-${Date.now()}`;
-    const createdAt = new Date().toISOString();
+    const createdAt = new Date();
 
-    await db.query(
-      'INSERT INTO users (id, name, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)',
-      [id, name, email, passwordHash, createdAt]
-    );
+    await db.insert(users).values({
+      id,
+      name,
+      email,
+      passwordHash,
+      createdAt,
+    });
 
     await setAuthCookie({ userId: id, email });
 
@@ -50,7 +60,7 @@ export async function POST(request: NextRequest) {
         id,
         name,
         email,
-        createdAt,
+        createdAt: createdAt.toISOString(),
       },
     });
   } catch {

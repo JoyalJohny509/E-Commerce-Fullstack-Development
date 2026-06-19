@@ -11,10 +11,13 @@ function ShopContent() {
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get('category') || 'all';
   const searchParam = searchParams.get('search') || '';
+  const aiParam = searchParams.get('ai') === 'true';
 
   const [activeCategory, setActiveCategory] = useState(categoryParam);
   const [sortBy, setSortBy] = useState('featured');
   const [searchQuery, setSearchQuery] = useState(searchParam);
+  const [isAiSearch, setIsAiSearch] = useState(aiParam);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -23,7 +26,8 @@ function ShopContent() {
   useEffect(() => {
     setActiveCategory(categoryParam);
     setSearchQuery(searchParam);
-  }, [categoryParam, searchParam]);
+    setIsAiSearch(aiParam);
+  }, [categoryParam, searchParam, aiParam]);
 
   useEffect(() => {
     let active = true;
@@ -31,22 +35,42 @@ function ShopContent() {
     async function loadData() {
       setIsLoading(true);
       try {
-        const queryParams = new URLSearchParams();
-        if (activeCategory && activeCategory !== 'all') {
-          queryParams.append('category', activeCategory);
-        }
-        if (searchQuery) {
-          queryParams.append('search', searchQuery);
-        }
-        if (sortBy) {
-          queryParams.append('sort', sortBy);
+        let data;
+
+        if (isAiSearch && searchQuery) {
+          const res = await fetch(`/api/search/semantic?q=${encodeURIComponent(searchQuery)}`);
+          data = await res.json();
+
+          // Since semantic search API doesn't return categories, fetch them if needed
+          if (categories.length === 0) {
+            const catRes = await fetch('/api/products');
+            const catData = await catRes.json();
+            if (active && catData.success && catData.categories) {
+              setCategories(catData.categories);
+            }
+          }
+        } else {
+          const queryParams = new URLSearchParams();
+          if (activeCategory && activeCategory !== 'all') {
+            queryParams.append('category', activeCategory);
+          }
+          if (searchQuery) {
+            queryParams.append('search', searchQuery);
+          }
+          if (sortBy) {
+            queryParams.append('sort', sortBy);
+          }
+
+          const res = await fetch(`/api/products?${queryParams.toString()}`);
+          data = await res.json();
         }
 
-        const res = await fetch(`/api/products?${queryParams.toString()}`);
-        const data = await res.json();
         if (active && data.success) {
           setProducts(data.products);
-          setCategories(data.categories);
+          setAiSummary(data.summary || null);
+          if (data.categories) {
+            setCategories(data.categories);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch products', err);
@@ -63,7 +87,7 @@ function ShopContent() {
       active = false;
       clearTimeout(delayDebounceFn);
     };
-  }, [activeCategory, sortBy, searchQuery]);
+  }, [activeCategory, sortBy, searchQuery, isAiSearch]);
 
   const totalProductCount = categories.reduce((acc, cat) => acc + cat.count, 0);
 
@@ -90,7 +114,7 @@ function ShopContent() {
               <div className={styles.filterList}>
                 <button
                   className={`${styles.filterItem} ${activeCategory === 'all' ? styles.filterItemActive : ''}`}
-                  onClick={() => { setActiveCategory('all'); setSearchQuery(''); }}
+                  onClick={() => { setActiveCategory('all'); setSearchQuery(''); setIsAiSearch(false); setAiSummary(null); }}
                   id="filter-all"
                 >
                   <span>All Products</span>
@@ -100,7 +124,7 @@ function ShopContent() {
                   <button
                     key={cat.id}
                     className={`${styles.filterItem} ${activeCategory === cat.slug ? styles.filterItemActive : ''}`}
-                    onClick={() => { setActiveCategory(cat.slug); setSearchQuery(''); }}
+                    onClick={() => { setActiveCategory(cat.slug); setSearchQuery(''); setIsAiSearch(false); setAiSummary(null); }}
                     id={`filter-${cat.slug}`}
                   >
                     <span>{cat.icon} {cat.name}</span>
@@ -114,12 +138,26 @@ function ShopContent() {
               <h3 className={styles.filterTitle}>Search</h3>
               <input
                 type="text"
-                className={`input ${styles.searchInput}`}
-                placeholder="Search products..."
+                className={`input ${styles.searchInput} ${isAiSearch ? styles.searchInputAi : ''}`}
+                placeholder={isAiSearch ? "✨ AI Semantic search..." : "Search products..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 id="shop-search-input"
               />
+              <label className={styles.aiToggleLabel}>
+                <input
+                  type="checkbox"
+                  checked={isAiSearch}
+                  onChange={(e) => {
+                    setIsAiSearch(e.target.checked);
+                    if (!e.target.checked) setAiSummary(null);
+                  }}
+                  className={styles.aiCheckbox}
+                />
+                <span className={styles.aiToggleText}>
+                  ✨ AI Semantic Search
+                </span>
+              </label>
             </div>
           </aside>
 
@@ -143,6 +181,23 @@ function ShopContent() {
               </div>
             </div>
 
+            {/* AI Summary Banner */}
+            {aiSummary && (
+              <div className={styles.aiSummaryContainer}>
+                <div className={styles.aiSummaryHeader}>
+                  <span className={styles.aiSummaryBadge}>✨ AI Semantic Summary</span>
+                  <button
+                    onClick={() => setAiSummary(null)}
+                    className={styles.aiSummaryClose}
+                    aria-label="Dismiss AI summary"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className={styles.aiSummaryText}>{aiSummary}</p>
+              </div>
+            )}
+
             {isLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '80px 0' }}>
                 <div className="spinner" />
@@ -157,7 +212,7 @@ function ShopContent() {
               <div className={styles.emptyState}>
                 <span className={styles.emptyIcon}>🔍</span>
                 <h3>No products found</h3>
-                <p>Try adjusting your search or filter criteria</p>
+                <p>{isAiSearch ? "Try describing what you are looking for in different words" : "Try adjusting your search or filter criteria"}</p>
               </div>
             )}
           </div>

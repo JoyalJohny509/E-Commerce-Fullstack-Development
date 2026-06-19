@@ -1,39 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { cartItems, products } from '@/lib/db/schema';
 import { getCurrentUser } from '@/lib/auth';
+import { eq, and } from 'drizzle-orm';
+import { toClientProduct } from '@/lib/types';
 
-async function getUserCart(db: any, userId: string) {
-  const result = await db.query(
-    `SELECT ci.quantity, p.id, p.name, p.description, p.price, p.original_price,
-            p.image, p.category, p.rating, p.review_count, p.in_stock, p.badge, p.features
-     FROM cart_items ci
-     JOIN products p ON ci.product_id = p.id
-     WHERE ci.user_id = $1`,
-    [userId]
-  );
-  
-  const rows = result.rows;
+/**
+ * Fetch the current user's cart with full product details.
+ * Exported so the [productId] sub-route can reuse it.
+ */
+export async function getUserCart(userId: string) {
+  const rows = await db
+    .select({
+      quantity: cartItems.quantity,
+      product: {
+        id: products.id,
+        name: products.name,
+        description: products.description,
+        price: products.price,
+        originalPrice: products.originalPrice,
+        image: products.image,
+        category: products.category,
+        rating: products.rating,
+        reviewCount: products.reviewCount,
+        inStock: products.inStock,
+        badge: products.badge,
+        features: products.features,
+        embedding: products.embedding,
+      },
+    })
+    .from(cartItems)
+    .innerJoin(products, eq(cartItems.productId, products.id))
+    .where(eq(cartItems.userId, userId));
 
-  return rows.map((row: any) => ({
+  return rows.map((row) => ({
     quantity: row.quantity,
-    product: {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      price: row.price,
-      originalPrice: row.original_price,
-      image: row.image,
-      category: row.category,
-      rating: row.rating,
-      reviewCount: row.review_count,
-      inStock: Boolean(row.in_stock),
-      badge: row.badge,
-      features: row.features ? JSON.parse(row.features) : [],
-    },
+    product: toClientProduct(row.product),
   }));
 }
-
-export { getUserCart };
 
 // GET /api/cart - Get current user's cart items
 export async function GET() {
@@ -46,9 +51,8 @@ export async function GET() {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
-    const items = await getUserCart(db, user.userId);
+    const items = await getUserCart(user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {
@@ -81,12 +85,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
 
     // Verify the product exists
-    const productResult = await db.query('SELECT id FROM products WHERE id = $1', [productId]);
-    const product = productResult.rows[0];
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+
     if (!product) {
       return NextResponse.json(
         { success: false, error: 'Product not found' },
@@ -95,27 +102,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if item already exists in cart
-    const existingItemResult = await db.query(
-      'SELECT quantity FROM cart_items WHERE user_id = $1 AND product_id = $2',
-      [user.userId, productId]
-    );
-    const existingItem = existingItemResult.rows[0] as any;
+    const [existingItem] = await db
+      .select({ quantity: cartItems.quantity })
+      .from(cartItems)
+      .where(and(eq(cartItems.userId, user.userId), eq(cartItems.productId, productId)))
+      .limit(1);
 
     if (existingItem) {
       // Increment quantity
-      await db.query(
-        'UPDATE cart_items SET quantity = quantity + $1 WHERE user_id = $2 AND product_id = $3',
-        [quantity, user.userId, productId]
-      );
+      await db
+        .update(cartItems)
+        .set({ quantity: existingItem.quantity + quantity })
+        .where(and(eq(cartItems.userId, user.userId), eq(cartItems.productId, productId)));
     } else {
       // Insert new row
-      await db.query(
-        'INSERT INTO cart_items (user_id, product_id, quantity) VALUES ($1, $2, $3)',
-        [user.userId, productId, quantity]
-      );
+      await db.insert(cartItems).values({
+        userId: user.userId,
+        productId,
+        quantity,
+      });
     }
 
-    const items = await getUserCart(db, user.userId);
+    const items = await getUserCart(user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {
@@ -138,9 +146,8 @@ export async function DELETE() {
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
-    await db.query('DELETE FROM cart_items WHERE user_id = $1', [user.userId]);
+    await db.delete(cartItems).where(eq(cartItems.userId, user.userId));
 
     return NextResponse.json({ success: true });
   } catch (error) {

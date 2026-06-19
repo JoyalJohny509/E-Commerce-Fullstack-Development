@@ -10,6 +10,7 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isAiSearch, setIsAiSearch] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export default function Header() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      window.location.href = `/shop?search=${encodeURIComponent(searchQuery)}`;
+      window.location.href = `/shop?search=${encodeURIComponent(searchQuery)}${isAiSearch ? '&ai=true' : ''}`;
       setSearchOpen(false);
       setSearchQuery('');
     }
@@ -80,18 +81,28 @@ export default function Header() {
           <div className={styles.searchWrapper}>
             {searchOpen && (
               <form onSubmit={handleSearch} className={styles.searchForm}>
-                <input
-                  ref={searchRef}
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={styles.searchInput}
-                />
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    placeholder={isAiSearch ? "✨ AI Semantic search..." : "Search products..."}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={`${styles.searchInput} ${isAiSearch ? styles.searchInputAi : ''}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsAiSearch(!isAiSearch)}
+                    className={`${styles.aiToggleBtn} ${isAiSearch ? styles.aiToggleBtnActive : ''}`}
+                    title="Toggle AI Semantic Search"
+                  >
+                    ✨
+                  </button>
+                </div>
               </form>
             )}
             <button
-              className={styles.iconBtn}
+              className={`${styles.iconBtn} ${isAiSearch && searchOpen ? styles.iconBtnActive : ''}`}
               onClick={() => setSearchOpen(!searchOpen)}
               aria-label="Toggle search"
               id="search-toggle"

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { cartItems } from '@/lib/db/schema';
 import { getCurrentUser } from '@/lib/auth';
 import { getUserCart } from '../route';
+import { eq, and } from 'drizzle-orm';
 
 // PATCH /api/cart/:productId - Update quantity for a specific cart item
 export async function PATCH(
@@ -28,24 +31,19 @@ export async function PATCH(
       );
     }
 
-    const db = getDb();
     await initializeDatabase();
+
+    const condition = and(eq(cartItems.userId, user.userId), eq(cartItems.productId, productId));
 
     if (quantity <= 0) {
       // Delete the item if quantity is zero or negative
-      await db.query(
-        'DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2',
-        [user.userId, productId]
-      );
+      await db.delete(cartItems).where(condition);
     } else {
       // Update the quantity
-      await db.query(
-        'UPDATE cart_items SET quantity = $1 WHERE user_id = $2 AND product_id = $3',
-        [quantity, user.userId, productId]
-      );
+      await db.update(cartItems).set({ quantity }).where(condition);
     }
 
-    const items = await getUserCart(db, user.userId);
+    const items = await getUserCart(user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {
@@ -72,15 +70,13 @@ export async function DELETE(
     }
 
     const { productId } = await params;
-    const db = getDb();
     await initializeDatabase();
 
-    await db.query(
-      'DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2',
-      [user.userId, productId]
-    );
+    await db
+      .delete(cartItems)
+      .where(and(eq(cartItems.userId, user.userId), eq(cartItems.productId, productId)));
 
-    const items = await getUserCart(db, user.userId);
+    const items = await getUserCart(user.userId);
 
     return NextResponse.json({ success: true, items });
   } catch (error) {

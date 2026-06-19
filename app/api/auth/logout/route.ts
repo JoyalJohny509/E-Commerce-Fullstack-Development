@@ -3,7 +3,7 @@ import { clearAuthCookie } from '@/lib/auth';
 
 export async function POST() {
   try {
-    clearAuthCookie();
+    await clearAuthCookie();
 
     return NextResponse.json({ success: true });
   } catch {

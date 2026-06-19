@@ -1,28 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, initializeDatabase } from '@/lib/db';
+import { db } from '@/lib/db';
+import { initializeDatabase } from '@/lib/db/init';
+import { orders, orderItems } from '@/lib/db/schema';
 import { getCurrentUser } from '@/lib/auth';
-
-interface OrderRow {
-  id: string;
-  user_id: string;
-  subtotal: number;
-  shipping: number;
-  tax: number;
-  total: number;
-  status: string;
-  payment_method: string;
-  shipping_address: string | object;
-  created_at: string | Date;
-  estimated_delivery: string | Date;
-}
-
-interface OrderItemRow {
-  product_id: string;
-  product_name: string;
-  product_image: string;
-  price: number;
-  quantity: number;
-}
+import { eq, and } from 'drizzle-orm';
 
 export async function GET(
   _request: NextRequest,
@@ -38,14 +19,13 @@ export async function GET(
     }
 
     const { id } = await params;
-    const db = getDb();
     await initializeDatabase();
 
-    const orderResult = await db.query(
-      'SELECT * FROM orders WHERE id = $1 AND user_id = $2',
-      [id, session.userId]
-    );
-    const order = orderResult.rows[0] as OrderRow | undefined;
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, id), eq(orders.userId, session.userId)))
+      .limit(1);
 
     if (!order) {
       return NextResponse.json(
@@ -54,13 +34,19 @@ export async function GET(
       );
     }
 
-    const itemsResult = await db.query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
-    const items = itemsResult.rows as OrderItemRow[];
+    const items = await db
+      .select()
+      .from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
 
-    const createdAt = order.created_at instanceof Date ? order.created_at.toISOString() : order.created_at;
-    const estimatedDelivery = order.estimated_delivery instanceof Date ? order.estimated_delivery.toISOString() : order.estimated_delivery;
+    const createdAt = order.createdAt instanceof Date
+      ? order.createdAt.toISOString()
+      : order.createdAt;
+    const estimatedDelivery = order.estimatedDelivery instanceof Date
+      ? order.estimatedDelivery.toISOString()
+      : order.estimatedDelivery;
 
-    let parsedAddress = order.shipping_address;
+    let parsedAddress: string | object = order.shippingAddress;
     if (typeof parsedAddress === 'string') {
       try {
         parsedAddress = JSON.parse(parsedAddress);
@@ -73,23 +59,23 @@ export async function GET(
       success: true,
       order: {
         id: order.id,
-        userId: order.user_id,
+        userId: order.userId,
         subtotal: Number(order.subtotal),
         shipping: Number(order.shipping),
         tax: Number(order.tax),
         total: Number(order.total),
         status: order.status,
-        paymentMethod: order.payment_method,
+        paymentMethod: order.paymentMethod,
         shippingAddress: parsedAddress,
         items: items.map((item) => ({
-          productId: item.product_id,
-          productName: item.product_name,
-          productImage: item.product_image,
+          productId: item.productId,
+          productName: item.productName,
+          productImage: item.productImage,
           price: Number(item.price),
           quantity: Number(item.quantity),
         })),
-        createdAt: createdAt,
-        estimatedDelivery: estimatedDelivery,
+        createdAt,
+        estimatedDelivery,
       },
     });
   } catch (error) {
