@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    setAuthCookie({ userId: user.id, email: user.email });
+    await setAuthCookie({ userId: user.id, email: user.email });
 
     return NextResponse.json({
       success: true,

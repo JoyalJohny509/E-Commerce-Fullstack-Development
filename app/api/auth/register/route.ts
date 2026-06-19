@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       [id, name, email, passwordHash, createdAt]
     );
 
-    setAuthCookie({ userId: id, email });
+    await setAuthCookie({ userId: id, email });
 
     return NextResponse.json({
       success: true,
